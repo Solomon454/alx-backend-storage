@@ -1,38 +1,54 @@
 #!/usr/bin/env python3
-'''A module with tools for request caching and tracking.
-'''
+"""A module with tools for request caching and tracking.
+"""
 import redis
 import requests
 from functools import wraps
 from typing import Callable
 
 
-redis_store = redis.Redis()
-'''The module-level Redis instance.
-'''
+import requests
+import functools
+import time
 
+# Decorator for caching with a time-to-live (TTL)
+def expiring_cache(ttl):
+    def decorator(func):
+        cache = functools.lru_cache(maxsize=None, typed=False)
 
-def data_cacher(method: Callable) -> Callable:
-    '''Caches the output of fetched data.
-    '''
-    @wraps(method)
-    def invoker(url) -> str:
-        '''The wrapper function for caching the output.
-        '''
-        redis_store.incr(f'count:{url}')
-        result = redis_store.get(f'result:{url}')
-        if result:
-            return result.decode('utf-8')
-        result = method(url)
-        redis_store.set(f'count:{url}', 0)
-        redis_store.setex(f'result:{url}', 10, result)
-        return result
-    return invoker
+        @functools.wraps(func)
+        def wrapper(url):
+            result = cache.get(url)
+            if result is None:
+                result = func(url)
+                cache[url] = result
+                time.sleep(ttl)  # Simulate a slow response time for the slowwly API
+            return result
 
+        return wrapper
 
-@data_cacher
-def get_page(url: str) -> str:
-    '''Returns the content of a URL after caching the request's response,
-    and tracking the request.
-    '''
-    return requests.get(url).text
+    return decorator
+
+# Decorator with a default TTL of 10 seconds
+def cache_with_default_ttl(func):
+    return expiring_cache(10)(func)
+
+# Get the HTML content of a URL and track the number of accesses
+@cache_with_default_ttl
+def get_page(url):
+    # Simulate a slow response using slowwly API
+    slowwly_url = f"http://slowwly.robertomurray.co.uk/delay/1000/url/{url}"
+    response = requests.get(slowwly_url)
+
+    # Increment the access count for this URL
+    access_count_key = f"count:{url}"
+    access_count = int(redis_client.get(access_count_key) or 0)
+    redis_client.set(access_count_key, access_count + 1)
+
+    return response.text
+
+if __name__ == "__main__":
+    # Test the get_page function
+    print(get_page("https://www.mysolomon.com"))
+    print(get_page("https://www.google.com"))
+    print(get_page("https://www.redmart.com"))
