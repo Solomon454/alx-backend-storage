@@ -1,54 +1,42 @@
 #!/usr/bin/env python3
 """A module with tools for request caching and tracking.
 """
+
+
 import redis
 import requests
 from functools import wraps
-from typing import Callable
+
+r = redis.Redis()
 
 
-import requests
-import functools
-import time
+def url_access_count(method):
+    """decorator for get_page function"""
+    @wraps(method)
+    def wrapper(url):
+        """wrapper function"""
+        key = "cached:" + url
+        cached_value = r.get(key)
+        if cached_value:
+            return cached_value.decode("utf-8")
 
-# Decorator for caching with a time-to-live (TTL)
-def expiring_cache(ttl):
-    def decorator(func):
-        cache = functools.lru_cache(maxsize=None, typed=False)
+            # Get new content and update cache
+        key_count = "count:" + url
+        html_content = method(url)
 
-        @functools.wraps(func)
-        def wrapper(url):
-            result = cache.get(url)
-            if result is None:
-                result = func(url)
-                cache[url] = result
-                time.sleep(ttl)  # Simulate a slow response time for the slowwly API
-            return result
+        r.incr(key_count)
+        r.set(key, html_content, ex=10)
+        r.expire(key, 10)
+        return html_content
+    return wrapper
 
-        return wrapper
 
-    return decorator
+@url_access_count
+def get_page(url: str) -> str:
+    """obtain the HTML content of a particular"""
+    results = requests.get(url)
+    return results.text
 
-# Decorator with a default TTL of 10 seconds
-def cache_with_default_ttl(func):
-    return expiring_cache(10)(func)
-
-# Get the HTML content of a URL and track the number of accesses
-@cache_with_default_ttl
-def get_page(url):
-    # Simulate a slow response using slowwly API
-    slowwly_url = f"http://slowwly.robertomurray.co.uk/delay/1000/url/{url}"
-    response = requests.get(slowwly_url)
-
-    # Increment the access count for this URL
-    access_count_key = f"count:{url}"
-    access_count = int(redis_client.get(access_count_key) or 0)
-    redis_client.set(access_count_key, access_count + 1)
-
-    return response.text
 
 if __name__ == "__main__":
-    # Test the get_page function
-    print(get_page("https://www.mysolomon.com"))
-    print(get_page("https://www.google.com"))
-    print(get_page("https://www.redmart.com"))
+    get_page('http://slowwly.robertomurray.co.uk')
